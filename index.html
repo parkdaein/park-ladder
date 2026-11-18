@@ -7,7 +7,7 @@
   <style>
     * { box-sizing: border-box; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; }
     body { margin: 0; padding: 20px; background: #f4f6f9; color: #222; display: flex; justify-content: center; }
-    .container { width: 100%; max-width: 800px; background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+    .container { width: 100%; max-width: 820px; background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
     h1 { text-align: center; margin-top: 0; color: #1a73e8; }
     .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
     .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
@@ -29,7 +29,7 @@
     .online-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .online-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 16px; font-size: 13px; font-weight: 500; }
     .online-dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; display: inline-block; }
-    canvas { width: 100%; height: 420px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; display: block; margin: 16px 0; }
+    canvas { width: 100%; height: 680px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; display: block; margin: 16px 0; }
     .player-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }
     .results-list { list-style: none; padding: 0; margin: 0; }
     .results-list li { padding: 8px 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
@@ -98,7 +98,7 @@
 
     <div id="playerButtons" class="player-btns"></div>
 
-    <canvas id="ladderCanvas" width="750" height="420"></canvas>
+    <canvas id="ladderCanvas" width="760" height="680"></canvas>
 
     <div class="box">
       <h4 style="margin-top:0;">실시간 결과 현황</h4>
@@ -136,7 +136,7 @@
 
   const canvas = document.getElementById('ladderCanvas');
   const ctx = canvas.getContext('2d');
-  const COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+  const COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#14b8a6', '#6366f1', '#e11d48'];
 
   // --- 동적 입력칸(참가자 + 벌칙 쌍) 관리 ---
   const pairsContainer = document.getElementById('pairsContainer');
@@ -174,7 +174,7 @@
     addPairRow('', '');
   });
 
-  // URL 파라미터로 방 코드 자동 입장 처리 (닉네임 묻기)
+  // URL 파라미터로 방 코드 자동 입장 처리
   const urlParams = new URLSearchParams(window.location.search);
   const invitedRoom = urlParams.get('room');
   if (invitedRoom) {
@@ -211,7 +211,7 @@
     localStorage.setItem('ladder_nickname', hostNick);
 
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const steps = 12;
+    const steps = 28; // 기존 12층 -> 28층으로 대폭 연장
     const bridges = generateBridges(players.length, steps);
 
     const initialData = {
@@ -278,10 +278,10 @@
     roleBadge.style.color = isHost ? '#92400e' : '#475569';
 
     document.getElementById('controlGuideText').innerHTML = isHost
-      ? '👑 당신은 <strong>방장</strong>입니다. 아래 버튼을 눌러 사다리를 출발시키세요!'
-      : '👀 <strong>방장</strong>만 사다리 출발 버튼을 누를 수 있습니다. 화면에서 실시간 결과를 확인하세요!';
+      ? '👑 당신은 <strong>방장</strong>입니다. 하단 결과는 도착하기 전까지 <strong>❓</strong>로 숨겨집니다!'
+      : '👀 <strong>방장</strong>만 사다리 출발 버튼을 누를 수 있습니다. 도착 시 결과가 공개됩니다!';
 
-    // 실시간 접속자 등록 (창 닫기/새로고침 시 자동 삭제)
+    // 실시간 접속자 등록
     const onlineListRef = ref(db, `rooms/${roomId}/onlineUsers`);
     myPresenceRef = push(onlineListRef);
     set(myPresenceRef, {
@@ -332,14 +332,29 @@
     return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   }
 
-  // 가로줄 무작위 생성
+  // 가로줄 무작위 고밀도 생성 (눈으로 추적 불가 수준)
   function generateBridges(cols, steps) {
     const bridges = [];
     for (let r = 0; r < steps; r++) {
       const row = new Array(cols - 1).fill(false);
-      for (let c = 0; c < cols - 1; c++) {
-        if (c > 0 && row[c - 1]) continue;
-        row[c] = Math.random() < 0.45;
+      // 좌우 편향을 없애기 위해 탐색 방향을 층마다 랜덤하게 결정
+      const indices = Array.from({ length: cols - 1 }, (_, i) => i);
+      if (Math.random() < 0.5) indices.reverse();
+
+      for (const c of indices) {
+        const leftBlocked = c > 0 && row[c - 1];
+        const rightBlocked = c < cols - 2 && row[c + 1];
+        if (leftBlocked || rightBlocked) continue;
+
+        // 바로 위층과 똑같은 위치에 연속으로 생기는 것을 줄여 지그재그 유도
+        const sameAsAbove = r > 0 && bridges[r - 1][c];
+        const prob = sameAsAbove ? 0.35 : 0.72;
+        row[c] = Math.random() < prob;
+      }
+
+      // 한 층에 다리가 0개라면 최소 1개는 강제 생성
+      if (!row.includes(true)) {
+        row[Math.floor(Math.random() * (cols - 1))] = true;
       }
       bridges.push(row);
     }
@@ -360,7 +375,7 @@
         btn.onclick = () => triggerTrace(idx);
       } else {
         btn.textContent = isDone ? `${name} (완료)` : `${name} (대기)`;
-        btn.disabled = true; // 일반 참가자는 비활성화
+        btn.disabled = true;
       }
 
       btn.style.background = isDone ? '#94a3b8' : COLORS[idx % COLORS.length];
@@ -376,12 +391,15 @@
     });
   }
 
-  // 기본 사다리 그리기
+  // 기본 사다리 그리기 (도착하지 않은 하단 결과는 ❓로 블라인드 처리)
   function drawBaseLadder() {
     if (!roomData) return;
     const { players, prizes, steps, bridges } = roomData;
+    const completed = roomData.completed || {};
+    const revealedPrizeIndices = new Set(Object.values(completed));
+
     const cols = players.length;
-    const padX = 60, padY = 50;
+    const padX = 55, padY = 48;
     const w = canvas.width - padX * 2;
     const h = canvas.height - padY * 2;
     const colGap = w / (cols - 1);
@@ -390,26 +408,30 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.lineCap = 'round';
 
-    ctx.font = 'bold 15px sans-serif';
+    ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     for (let c = 0; c < cols; c++) {
       const x = padX + c * colGap;
       ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
       ctx.moveTo(x, padY);
       ctx.lineTo(x, padY + h);
       ctx.stroke();
 
+      // 상단 참가자 이름
       ctx.fillStyle = COLORS[c % COLORS.length];
-      ctx.fillText(players[c], x, padY - 18);
+      ctx.fillText(players[c], x, padY - 16);
 
-      ctx.fillStyle = '#1e293b';
-      ctx.fillText(prizes[c], x, padY + h + 28);
+      // 하단 결과 (도착한 칸만 공개, 나머지는 ❓)
+      const isRevealed = revealedPrizeIndices.has(c);
+      ctx.fillStyle = isRevealed ? '#1e293b' : '#94a3b8';
+      ctx.fillText(isRevealed ? prizes[c] : '❓', x, padY + h + 26);
     }
 
+    // 가로줄 그리기
     ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3.5;
     for (let r = 0; r < steps; r++) {
       const y = padY + (r + 1) * rowGap;
       for (let c = 0; c < cols - 1; c++) {
@@ -432,7 +454,7 @@
 
     const { players, steps, bridges } = roomData;
     const cols = players.length;
-    const padX = 60, padY = 50;
+    const padX = 55, padY = 48;
     const colGap = (canvas.width - padX * 2) / (cols - 1);
     const rowGap = (canvas.height - padY * 2) / (steps + 1);
 
@@ -456,12 +478,12 @@
 
     let seg = 0;
     let progress = 0;
-    const speed = 0.08;
+    const speed = 0.22; // 28층 길이에 맞춰 경쾌하게 내려가는 속도
 
     function step() {
       drawBaseLadder();
       ctx.strokeStyle = COLORS[playerIdx % COLORS.length];
-      ctx.lineWidth = 6;
+      ctx.lineWidth = 5.5;
       ctx.beginPath();
       ctx.moveTo(points[0].x, points[0].y);
 
@@ -479,7 +501,7 @@
 
         ctx.fillStyle = COLORS[playerIdx % COLORS.length];
         ctx.beginPath();
-        ctx.arc(curX, curY, 8, 0, Math.PI * 2);
+        ctx.arc(curX, curY, 7.5, 0, Math.PI * 2);
         ctx.fill();
 
         progress += speed;
@@ -491,7 +513,6 @@
       } else {
         ctx.stroke();
         isAnimating = false;
-        // 방장만 완료 결과 DB에 기록 (중복 쓰기 방지)
         if (isHost) {
           update(ref(db, `rooms/${currentRoomId}/completed`), {
             [playerIdx]: finalPrizeIdx
