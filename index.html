@@ -10,14 +10,21 @@
     .container { width: 100%; max-width: 800px; background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
     h1 { text-align: center; margin-top: 0; color: #1a73e8; }
     .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
-    input, button { padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; }
-    input { flex: 1; min-width: 120px; }
-    button { background: #1a73e8; color: #fff; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .pair-header { display: flex; gap: 8px; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: #475569; padding-right: 44px; }
+    .pair-header span { flex: 1; }
+    input, button { padding: 10px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; }
+    input { flex: 1; min-width: 0; background: #fff; }
+    input:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,0.15); }
+    button { background: #1a73e8; color: #fff; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; white-space: nowrap; }
     button:hover { background: #1557b0; }
     button.secondary { background: #64748b; }
     button.secondary:hover { background: #475569; }
-    button:disabled { background: #cbd5e1; cursor: not-allowed; }
+    button.outline { background: #fff; color: #1a73e8; border: 1px solid #1a73e8; }
+    button.outline:hover { background: #eff6ff; }
+    button.danger { background: #fee2e2; color: #dc2626; padding: 10px 12px; }
+    button.danger:hover { background: #fecaca; }
+    button:disabled { background: #cbd5e1; color: #fff; border-color: #cbd5e1; cursor: not-allowed; }
     .badge { display: inline-block; padding: 4px 10px; background: #e0f2fe; color: #0369a1; border-radius: 20px; font-size: 13px; font-weight: 600; }
     canvas { width: 100%; height: 420px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; display: block; margin: 16px 0; }
     .player-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }
@@ -33,21 +40,27 @@
 
   <!-- 1. 로비 화면 (방 만들기 / 입장하기) -->
   <div id="lobbyView" class="box">
-    <h3>새 방 만들기</h3>
-    <div class="row">
-      <input type="text" id="playersInput" placeholder="참가자 이름 (쉼표로 구분 예: 철수,영희,민수)" value="철수,영희,민수,지영" />
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h3 style="margin: 0;">새 방 만들기</h3>
+      <button type="button" id="addPairBtn" class="outline">+ 인원 추가</button>
     </div>
-    <div class="row">
-      <input type="text" id="prizesInput" placeholder="결과 항목 (인원수와 동일하게 예: 당첨,꽝,꽝,커피)" value="통과,통과,통과,당첨" />
+
+    <div class="pair-header">
+      <span>참가자 이름</span>
+      <span>벌칙 / 결과 항목</span>
     </div>
-    <button id="createRoomBtn" style="width: 100%;">방 생성하고 시작하기</button>
+
+    <!-- 동적으로 입력칸이 추가되는 영역 -->
+    <div id="pairsContainer"></div>
+
+    <button type="button" id="createRoomBtn" style="width: 100%; margin-top: 8px; padding: 12px;">방 생성하고 시작하기</button>
 
     <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e2e8f0;">
 
-    <h3>기존 방 입장하기</h3>
+    <h3 style="margin-top: 0;">기존 방 입장하기</h3>
     <div class="row">
       <input type="text" id="joinRoomIdInput" placeholder="방 코드 6자리 입력" />
-      <button id="joinRoomBtn" class="secondary">입장</button>
+      <button type="button" id="joinRoomBtn" class="secondary">입장</button>
     </div>
   </div>
 
@@ -59,8 +72,8 @@
         <span id="roleBadge" class="badge" style="background:#fef3c7; color:#92400e;">참가자</span>
       </div>
       <div>
-        <button id="copyLinkBtn" class="secondary">초대 링크 복사</button>
-        <button id="leaveRoomBtn" class="secondary">나가기</button>
+        <button type="button" id="copyLinkBtn" class="secondary">초대 링크 복사</button>
+        <button type="button" id="leaveRoomBtn" class="secondary">나가기</button>
       </div>
     </div>
 
@@ -103,11 +116,47 @@
   let roomRef = null;
   let roomData = null;
   let isAnimating = false;
-  let currentAnimIndex = -1;
 
   const canvas = document.getElementById('ladderCanvas');
   const ctx = canvas.getContext('2d');
   const COLORS = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+
+  // --- 동적 입력칸(참가자 + 벌칙 쌍) 관리 ---
+  const pairsContainer = document.getElementById('pairsContainer');
+
+  function addPairRow(playerVal = '', prizeVal = '') {
+    const row = document.createElement('div');
+    row.className = 'row pair-row';
+    row.innerHTML = `
+      <input type="text" class="player-input" placeholder="참가자 이름" value="${playerVal}" />
+      <input type="text" class="prize-input" placeholder="벌칙 / 결과" value="${prizeVal}" />
+      <button type="button" class="danger remove-btn" title="삭제">✕</button>
+    `;
+
+    row.querySelector('.remove-btn').addEventListener('click', () => {
+      if (pairsContainer.querySelectorAll('.pair-row').length <= 2) {
+        alert('최소 2명 이상의 참가자가 필요합니다.');
+        return;
+      }
+      row.remove();
+    });
+
+    pairsContainer.appendChild(row);
+  }
+
+  // 초기 기본값 4줄 세팅 (원하시면 빈칸으로 두셔도 됩니다)
+  addPairRow('철수', '커피쏘기');
+  addPairRow('영희', '통과');
+  addPairRow('민수', '통과');
+  addPairRow('지영', '간식쏘기');
+
+  document.getElementById('addPairBtn').addEventListener('click', () => {
+    if (pairsContainer.querySelectorAll('.pair-row').length >= 12) {
+      alert('최대 12명까지 추가할 수 있습니다.');
+      return;
+    }
+    addPairRow('', '');
+  });
 
   // URL 파라미터로 방 코드 자동 입장 확인
   const urlParams = new URLSearchParams(window.location.search);
@@ -116,15 +165,31 @@
   }
 
   // 방 생성
-  document.getElementById('createRoomBtn').addEventListener('click', async () => {
-    const players = document.getElementById('playersInput').value.split(',').map(s => s.trim()).filter(Boolean);
-    const prizes = document.getElementById('prizesInput').value.split(',').map(s => s.trim()).filter(Boolean);
+  const createBtn = document.getElementById('createRoomBtn');
+  createBtn.addEventListener('click', async () => {
+    const rows = document.querySelectorAll('.pair-row');
+    const players = [];
+    const prizes = [];
 
-    if (players.length < 2) return alert('참가자는 최소 2명 이상이어야 합니다.');
-    if (players.length !== prizes.length) return alert(`참가자 수(${players.length}명)와 결과 항목 수(${prizes.length}개)가 일치해야 합니다.`);
+    for (let i = 0; i < rows.length; i++) {
+      const pName = rows[i].querySelector('.player-input').value.trim();
+      const pPrize = rows[i].querySelector('.prize-input').value.trim();
+
+      if (!pName || !pPrize) {
+        alert(`${i + 1}번째 줄의 참가자 이름과 벌칙을 모두 입력해 주세요.`);
+        return;
+      }
+      players.push(pName);
+      prizes.push(pPrize);
+    }
+
+    if (players.length < 2) {
+      alert('참가자는 최소 2명 이상이어야 합니다.');
+      return;
+    }
 
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const steps = 12; // 가로줄 층수
+    const steps = 12;
     const bridges = generateBridges(players.length, steps);
 
     const initialData = {
@@ -132,13 +197,23 @@
       prizes,
       steps,
       bridges,
-      activeTrace: null, // { playerIndex, timestamp }
-      completed: {}      // { playerIndex: prizeIndex }
+      activeTrace: null,
+      completed: {}
     };
 
-    await set(ref(db, `rooms/${roomId}`), initialData);
-    localStorage.setItem(`host_${roomId}`, 'true');
-    enterGameView(roomId);
+    try {
+      createBtn.disabled = true;
+      createBtn.textContent = '방 생성 중...';
+      await set(ref(db, `rooms/${roomId}`), initialData);
+      localStorage.setItem(`host_${roomId}`, 'true');
+      enterGameView(roomId);
+    } catch (error) {
+      console.error('Firebase 저장 실패:', error);
+      alert(`방 생성 실패: ${error.message}\n(Firebase Realtime Database 활성화 및 규칙 설정을 확인하세요.)`);
+    } finally {
+      createBtn.disabled = false;
+      createBtn.textContent = '방 생성하고 시작하기';
+    }
   });
 
   // 방 입장 버튼
@@ -149,12 +224,16 @@
   });
 
   async function joinRoom(roomId) {
-    const snapshot = await get(ref(db, `rooms/${roomId}`));
-    if (!snapshot.exists()) {
-      alert('존재하지 않는 방 코드입니다.');
-      return;
+    try {
+      const snapshot = await get(ref(db, `rooms/${roomId}`));
+      if (!snapshot.exists()) {
+        alert('존재하지 않는 방 코드입니다.');
+        return;
+      }
+      enterGameView(roomId);
+    } catch (error) {
+      alert(`입장 오류: ${error.message}`);
     }
-    enterGameView(roomId);
   }
 
   // 게임 화면 진입 및 Firebase 실시간 리스너 연결
@@ -176,7 +255,6 @@
       renderControls();
       renderResults();
 
-      // 새로운 사다리 타기 이벤트가 감지되면 애니메이션 실행
       if (newData.activeTrace && newData.activeTrace.timestamp !== prevTraceTime) {
         animateLadder(newData.activeTrace.playerIndex);
       } else if (!isAnimating) {
@@ -185,13 +263,13 @@
     });
   }
 
-  // 가로줄 무작위 생성 (인접한 줄끼리 겹치지 않게)
+  // 가로줄 무작위 생성
   function generateBridges(cols, steps) {
     const bridges = [];
     for (let r = 0; r < steps; r++) {
       const row = new Array(cols - 1).fill(false);
       for (let c = 0; c < cols - 1; c++) {
-        if (c > 0 && row[c - 1]) continue; // 바로 왼쪽에 다리가 있으면 패스
+        if (c > 0 && row[c - 1]) continue;
         row[c] = Math.random() < 0.45;
       }
       bridges.push(row);
@@ -236,7 +314,6 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.lineCap = 'round';
 
-    // 세로선 및 이름/결과 텍스트
     ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'center';
     for (let c = 0; c < cols; c++) {
@@ -255,7 +332,6 @@
       ctx.fillText(prizes[c], x, padY + h + 28);
     }
 
-    // 가로선
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 4;
     for (let r = 0; r < steps; r++) {
@@ -284,7 +360,6 @@
     const colGap = (canvas.width - padX * 2) / (cols - 1);
     const rowGap = (canvas.height - padY * 2) / (steps + 1);
 
-    // 경로 좌표 배열 생성
     let currCol = playerIdx;
     const points = [{ x: padX + currCol * colGap, y: padY }];
 
@@ -303,7 +378,6 @@
     points.push({ x: padX + currCol * colGap, y: padY + (canvas.height - padY * 2) });
     const finalPrizeIdx = currCol;
 
-    // 프레임 애니메이션 실행
     let seg = 0;
     let progress = 0;
     const speed = 0.08;
@@ -327,7 +401,6 @@
         ctx.lineTo(curX, curY);
         ctx.stroke();
 
-        // 현재 위치 점 표시
         ctx.fillStyle = COLORS[playerIdx % COLORS.length];
         ctx.beginPath();
         ctx.arc(curX, curY, 8, 0, Math.PI * 2);
@@ -342,7 +415,6 @@
       } else {
         ctx.stroke();
         isAnimating = false;
-        // 결과 저장
         update(ref(db, `rooms/${currentRoomId}/completed`), {
           [playerIdx]: finalPrizeIdx
         });
