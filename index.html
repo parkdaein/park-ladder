@@ -24,8 +24,11 @@
     button.outline:hover { background: #eff6ff; }
     button.danger { background: #fee2e2; color: #dc2626; padding: 10px 12px; }
     button.danger:hover { background: #fecaca; }
-    button:disabled { background: #cbd5e1; color: #fff; border-color: #cbd5e1; cursor: not-allowed; }
+    button:disabled { background: #cbd5e1 !important; color: #fff; border-color: #cbd5e1; cursor: not-allowed; opacity: 0.75; }
     .badge { display: inline-block; padding: 4px 10px; background: #e0f2fe; color: #0369a1; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .online-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .online-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 16px; font-size: 13px; font-weight: 500; }
+    .online-dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; display: inline-block; }
     canvas { width: 100%; height: 420px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; display: block; margin: 16px 0; }
     .player-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 10px; }
     .results-list { list-style: none; padding: 0; margin: 0; }
@@ -41,8 +44,12 @@
   <!-- 1. 로비 화면 (방 만들기 / 입장하기) -->
   <div id="lobbyView" class="box">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-      <h3 style="margin: 0;">새 방 만들기</h3>
+      <h3 style="margin: 0;">새 방 만들기 (방장)</h3>
       <button type="button" id="addPairBtn" class="outline">+ 인원 추가</button>
+    </div>
+
+    <div class="row" style="margin-bottom: 14px;">
+      <input type="text" id="hostNicknameInput" placeholder="내 닉네임 (접속자 목록 표시용, 예: 방장철수)" />
     </div>
 
     <div class="pair-header">
@@ -50,36 +57,44 @@
       <span>벌칙 / 결과 항목</span>
     </div>
 
-    <!-- 동적으로 입력칸이 추가되는 영역 -->
     <div id="pairsContainer"></div>
 
     <button type="button" id="createRoomBtn" style="width: 100%; margin-top: 8px; padding: 12px;">방 생성하고 시작하기</button>
 
     <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e2e8f0;">
 
-    <h3 style="margin-top: 0;">기존 방 입장하기</h3>
+    <h3 style="margin-top: 0;">기존 방 입장하기 (참가자)</h3>
     <div class="row">
-      <input type="text" id="joinRoomIdInput" placeholder="방 코드 6자리 입력" />
+      <input type="text" id="guestNicknameInput" placeholder="내 닉네임 입력" />
+      <input type="text" id="joinRoomIdInput" placeholder="방 코드 6자리" />
       <button type="button" id="joinRoomBtn" class="secondary">입장</button>
     </div>
   </div>
 
   <!-- 2. 게임 화면 -->
   <div id="gameView" class="hidden">
-    <div class="box" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-      <div>
-        <span class="badge">방 코드: <strong id="displayRoomId"></strong></span>
-        <span id="roleBadge" class="badge" style="background:#fef3c7; color:#92400e;">참가자</span>
+    <div class="box">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <span class="badge">방 코드: <strong id="displayRoomId"></strong></span>
+          <span id="roleBadge" class="badge" style="background:#fef3c7; color:#92400e;">참가자</span>
+        </div>
+        <div>
+          <button type="button" id="copyLinkBtn" class="secondary">초대 링크 복사</button>
+          <button type="button" id="leaveRoomBtn" class="secondary">나가기</button>
+        </div>
       </div>
-      <div>
-        <button type="button" id="copyLinkBtn" class="secondary">초대 링크 복사</button>
-        <button type="button" id="leaveRoomBtn" class="secondary">나가기</button>
+
+      <!-- 실시간 접속자 목록 -->
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+        <div style="font-size: 13px; font-weight: 600; color: #475569;">
+          🟢 현재 접속 중인 참가자 (<span id="onlineCount">0</span>명)
+        </div>
+        <div id="onlineUsersList" class="online-list"></div>
       </div>
     </div>
 
-    <p style="text-align: center; font-size: 14px; color: #475569;">
-      아래 <strong>참가자 버튼</strong>을 누르면 모든 접속자의 화면에서 동시에 사다리가 내려갑니다!
-    </p>
+    <p id="controlGuideText" style="text-align: center; font-size: 14px; color: #475569; font-weight: 500;"></p>
 
     <div id="playerButtons" class="player-btns"></div>
 
@@ -95,7 +110,7 @@
 <!-- Firebase SDK (Modular v10) -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getDatabase, ref, set, get, update, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+  import { getDatabase, ref, set, get, push, update, onValue, off, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAjOL4GgASs9mxiFx1S1hWNmt0JNNB4-SM",
@@ -114,8 +129,10 @@
   // 상태 변수
   let currentRoomId = null;
   let roomRef = null;
+  let myPresenceRef = null;
   let roomData = null;
   let isAnimating = false;
+  let isHost = false;
 
   const canvas = document.getElementById('ladderCanvas');
   const ctx = canvas.getContext('2d');
@@ -144,7 +161,6 @@
     pairsContainer.appendChild(row);
   }
 
-  // 초기 기본값 4줄 세팅 (원하시면 빈칸으로 두셔도 됩니다)
   addPairRow('철수', '커피쏘기');
   addPairRow('영희', '통과');
   addPairRow('민수', '통과');
@@ -158,13 +174,21 @@
     addPairRow('', '');
   });
 
-  // URL 파라미터로 방 코드 자동 입장 확인
+  // URL 파라미터로 방 코드 자동 입장 처리 (닉네임 묻기)
   const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('room')) {
-    joinRoom(urlParams.get('room').toUpperCase());
+  const invitedRoom = urlParams.get('room');
+  if (invitedRoom) {
+    const code = invitedRoom.toUpperCase();
+    document.getElementById('joinRoomIdInput').value = code;
+    const savedNick = localStorage.getItem('ladder_nickname') || '';
+    const nick = prompt(`방 [${code}]에 입장합니다.\n접속자 목록에 표시될 닉네임을 입력하세요:`, savedNick);
+    if (nick && nick.trim()) {
+      localStorage.setItem('ladder_nickname', nick.trim());
+      joinRoom(code, nick.trim());
+    }
   }
 
-  // 방 생성
+  // 방 생성 (방장)
   const createBtn = document.getElementById('createRoomBtn');
   createBtn.addEventListener('click', async () => {
     const rows = document.querySelectorAll('.pair-row');
@@ -183,10 +207,8 @@
       prizes.push(pPrize);
     }
 
-    if (players.length < 2) {
-      alert('참가자는 최소 2명 이상이어야 합니다.');
-      return;
-    }
+    const hostNick = document.getElementById('hostNicknameInput').value.trim() || `${players[0]}(방장)`;
+    localStorage.setItem('ladder_nickname', hostNick);
 
     const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
     const steps = 12;
@@ -206,7 +228,7 @@
       createBtn.textContent = '방 생성 중...';
       await set(ref(db, `rooms/${roomId}`), initialData);
       localStorage.setItem(`host_${roomId}`, 'true');
-      enterGameView(roomId);
+      enterGameView(roomId, hostNick);
     } catch (error) {
       console.error('Firebase 저장 실패:', error);
       alert(`방 생성 실패: ${error.message}\n(Firebase Realtime Database 활성화 및 규칙 설정을 확인하세요.)`);
@@ -216,35 +238,60 @@
     }
   });
 
-  // 방 입장 버튼
+  // 방 입장 버튼 (참가자)
   document.getElementById('joinRoomBtn').addEventListener('click', () => {
     const code = document.getElementById('joinRoomIdInput').value.trim().toUpperCase();
+    const nick = document.getElementById('guestNicknameInput').value.trim();
+    if (!nick) return alert('접속자 목록에 표시할 내 닉네임을 입력하세요.');
     if (!code) return alert('방 코드를 입력하세요.');
-    joinRoom(code);
+
+    localStorage.setItem('ladder_nickname', nick);
+    joinRoom(code, nick);
   });
 
-  async function joinRoom(roomId) {
+  async function joinRoom(roomId, nickname) {
     try {
       const snapshot = await get(ref(db, `rooms/${roomId}`));
       if (!snapshot.exists()) {
         alert('존재하지 않는 방 코드입니다.');
         return;
       }
-      enterGameView(roomId);
+      enterGameView(roomId, nickname);
     } catch (error) {
       alert(`입장 오류: ${error.message}`);
     }
   }
 
-  // 게임 화면 진입 및 Firebase 실시간 리스너 연결
-  function enterGameView(roomId) {
+  // 게임 화면 진입 및 Firebase 실시간 리스너 + 접속자(Presence) 등록
+  function enterGameView(roomId, nickname) {
     currentRoomId = roomId;
+    isHost = localStorage.getItem(`host_${roomId}`) === 'true';
+
     window.history.replaceState({}, '', `?room=${roomId}`);
     document.getElementById('lobbyView').classList.add('hidden');
     document.getElementById('gameView').classList.remove('hidden');
     document.getElementById('displayRoomId').textContent = roomId;
-    document.getElementById('roleBadge').textContent = localStorage.getItem(`host_${roomId}`) ? '방장' : '참가자';
 
+    const roleBadge = document.getElementById('roleBadge');
+    roleBadge.textContent = isHost ? '👑 방장' : '👀 참가자';
+    roleBadge.style.background = isHost ? '#fef3c7' : '#f1f5f9';
+    roleBadge.style.color = isHost ? '#92400e' : '#475569';
+
+    document.getElementById('controlGuideText').innerHTML = isHost
+      ? '👑 당신은 <strong>방장</strong>입니다. 아래 버튼을 눌러 사다리를 출발시키세요!'
+      : '👀 <strong>방장</strong>만 사다리 출발 버튼을 누를 수 있습니다. 화면에서 실시간 결과를 확인하세요!';
+
+    // 실시간 접속자 등록 (창 닫기/새로고침 시 자동 삭제)
+    const onlineListRef = ref(db, `rooms/${roomId}/onlineUsers`);
+    myPresenceRef = push(onlineListRef);
+    set(myPresenceRef, {
+      name: nickname,
+      isHost: isHost,
+      joinedAt: Date.now()
+    });
+    onDisconnect(myPresenceRef).remove();
+
+    // 방 전체 데이터 실시간 감지
     roomRef = ref(db, `rooms/${roomId}`);
     onValue(roomRef, (snapshot) => {
       if (!snapshot.exists()) return;
@@ -252,6 +299,7 @@
       const prevTraceTime = roomData?.activeTrace?.timestamp;
       roomData = newData;
 
+      renderOnlineUsers(newData.onlineUsers || {});
       renderControls();
       renderResults();
 
@@ -261,6 +309,27 @@
         drawBaseLadder();
       }
     });
+  }
+
+  // 현재 접속자 목록 렌더링
+  function renderOnlineUsers(onlineUsersObj) {
+    const container = document.getElementById('onlineUsersList');
+    const countSpan = document.getElementById('onlineCount');
+    container.innerHTML = '';
+
+    const users = Object.values(onlineUsersObj);
+    countSpan.textContent = users.length;
+
+    users.forEach(user => {
+      const chip = document.createElement('span');
+      chip.className = 'online-chip';
+      chip.innerHTML = `<span class="online-dot"></span> ${user.isHost ? '👑 ' : ''}${escapeHtml(user.name)}`;
+      container.appendChild(chip);
+    });
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   }
 
   // 가로줄 무작위 생성
@@ -277,24 +346,31 @@
     return bridges;
   }
 
-  // 상단 참가자 버튼 렌더링
+  // 상단 참가자 출발 버튼 렌더링 (방장만 클릭 가능)
   function renderControls() {
     const container = document.getElementById('playerButtons');
     container.innerHTML = '';
     roomData.players.forEach((name, idx) => {
       const btn = document.createElement('button');
       const isDone = roomData.completed && roomData.completed[idx] !== undefined;
-      btn.textContent = isDone ? `${name} (완료)` : `${name} 출발`;
+
+      if (isHost) {
+        btn.textContent = isDone ? `${name} (완료)` : `${name} 출발`;
+        btn.disabled = isAnimating;
+        btn.onclick = () => triggerTrace(idx);
+      } else {
+        btn.textContent = isDone ? `${name} (완료)` : `${name} (대기)`;
+        btn.disabled = true; // 일반 참가자는 비활성화
+      }
+
       btn.style.background = isDone ? '#94a3b8' : COLORS[idx % COLORS.length];
-      btn.disabled = isAnimating;
-      btn.onclick = () => triggerTrace(idx);
       container.appendChild(btn);
     });
   }
 
-  // Firebase에 사다리 타기 시작 신호 전송
+  // Firebase에 사다리 타기 시작 신호 전송 (방장 전용)
   async function triggerTrace(playerIndex) {
-    if (isAnimating) return;
+    if (!isHost || isAnimating) return;
     await update(roomRef, {
       activeTrace: { playerIndex, timestamp: Date.now() }
     });
@@ -415,9 +491,12 @@
       } else {
         ctx.stroke();
         isAnimating = false;
-        update(ref(db, `rooms/${currentRoomId}/completed`), {
-          [playerIdx]: finalPrizeIdx
-        });
+        // 방장만 완료 결과 DB에 기록 (중복 쓰기 방지)
+        if (isHost) {
+          update(ref(db, `rooms/${currentRoomId}/completed`), {
+            [playerIdx]: finalPrizeIdx
+          });
+        }
         renderControls();
       }
     }
@@ -433,8 +512,8 @@
       const li = document.createElement('li');
       const prizeIdx = completed[idx];
       li.innerHTML = `
-        <strong>${player}</strong>
-        <span>${prizeIdx !== undefined ? `🎯 <b>${roomData.prizes[prizeIdx]}</b>` : '대기 중...'}</span>
+        <strong>${escapeHtml(player)}</strong>
+        <span>${prizeIdx !== undefined ? `🎯 <b>${escapeHtml(roomData.prizes[prizeIdx])}</b>` : '대기 중...'}</span>
       `;
       list.appendChild(li);
     });
@@ -446,7 +525,8 @@
     alert('초대 링크가 복사되었습니다! 친구들에게 공유하세요.');
   };
 
-  document.getElementById('leaveRoomBtn').onclick = () => {
+  document.getElementById('leaveRoomBtn').onclick = async () => {
+    if (myPresenceRef) await remove(myPresenceRef);
     if (roomRef) off(roomRef);
     window.history.replaceState({}, '', window.location.pathname);
     location.reload();
